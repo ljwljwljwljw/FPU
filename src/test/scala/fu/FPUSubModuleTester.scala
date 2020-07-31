@@ -1,5 +1,7 @@
 package fu
 
+import java.io.{BufferedInputStream, BufferedReader, File, FileInputStream, InputStreamReader}
+
 import scala.sys.process._
 import org.scalatest._
 import chiseltest._
@@ -12,7 +14,9 @@ import fu.divsqrt._
 import fu.RoudingMode._
 import fu.fma._
 
-class MyDecoupledDriver[T <: Data](x: ReadyValidIO[T]) extends DecoupledDriver[T](x){
+import scala.util.Random
+
+class MyDecoupledDriver[T <: Data](x: ReadyValidIO[T]) extends DecoupledDriver[T](x) {
   def expectDequeue(data: T, message: => String): Unit = timescope {
     // TODO: check for init
     x.ready.poke(true.B)
@@ -40,8 +44,7 @@ case class FpuTest
 
 class FPUSubModuleTester extends FlatSpec
   with ChiselScalatestTester
-  with Matchers
-  with ParallelTestExecution {
+  with Matchers {
 
   implicit def decoupledToDriver[T <: Data](x: ReadyValidIO[T]) = new MyDecoupledDriver[T](x)
 
@@ -57,24 +60,24 @@ class FPUSubModuleTester extends FlatSpec
   )
 
   val i2f_tests = Seq(
-    FpuTest("i32_to_f64",  rmAll),
+    FpuTest("i32_to_f64", rmAll),
     FpuTest("ui32_to_f64", rmAll),
-    FpuTest("i64_to_f64",  rmAll),
+    FpuTest("i64_to_f64", rmAll),
     FpuTest("ui64_to_f64", rmAll),
-    FpuTest("i32_to_f32",  rmAll),
+    FpuTest("i32_to_f32", rmAll),
     FpuTest("ui32_to_f32", rmAll),
-    FpuTest("i64_to_f32",  rmAll),
+    FpuTest("i64_to_f32", rmAll),
     FpuTest("ui64_to_f32", rmAll)
   )
 
   val f2i_tests = Seq(
-    FpuTest("f64_to_i64",  rmAll),
+    FpuTest("f64_to_i64", rmAll),
     FpuTest("f64_to_ui64", rmAll),
-    FpuTest("f32_to_i64",  rmAll),
+    FpuTest("f32_to_i64", rmAll),
     FpuTest("f32_to_ui64", rmAll),
-    FpuTest("f64_to_i32",  rmAll),
+    FpuTest("f64_to_i32", rmAll),
     FpuTest("f64_to_ui32", rmAll),
-    FpuTest("f32_to_i32",  rmAll),
+    FpuTest("f32_to_i32", rmAll),
     FpuTest("f32_to_ui32", rmAll)
   )
 
@@ -94,7 +97,8 @@ class FPUSubModuleTester extends FlatSpec
   )
 
   val fma_tests = Seq(
-
+    FpuTest("f64_mulAdd", rmAll),
+    FpuTest("f32_mulAdd", rmAll)
   )
 
   val fadd_tests = Seq(
@@ -110,10 +114,10 @@ class FPUSubModuleTester extends FlatSpec
   )
 
 
-  val tests = fadd_tests ++ fmul_tests ++
+  val tests = fma_tests ++ fadd_tests ++ fmul_tests ++
     sqrt_tests ++ div_tests ++
-    fcmp_tests ++ i2f_tests ++
-    f2i_tests ++ f2f_tests
+      fcmp_tests ++ i2f_tests ++
+      f2i_tests ++ f2f_tests
 
   val backendMap = Map(
     "treadle" -> TreadleBackendAnnotation,
@@ -128,116 +132,140 @@ class FPUSubModuleTester extends FlatSpec
     RoudingMode.RMM -> "rnear_maxMag"
   )
 
-  val testMap = Map[String, (()=>FPUSubModule, Boolean, Int)]( elems=
-    "f64_sqrt" -> (()=>new DivSqrt, true, 1),
-    "f32_sqrt" -> (()=>new DivSqrt, false, 1),
-    "f64_div" -> (()=>new DivSqrt, true, 0),
-    "f32_div" -> (()=>new DivSqrt, false, 0),
+  val testMap = Map[String, (() => FPUSubModule, Boolean, Int)](elems =
+    "f64_sqrt" -> (() => new DivSqrt, true, 1),
+    "f32_sqrt" -> (() => new DivSqrt, false, 1),
+    "f64_div" -> (() => new DivSqrt, true, 0),
+    "f32_div" -> (() => new DivSqrt, false, 0),
 
-    "i32_to_f64"  -> (()=>new IntToFloat, true, 0),
-    "ui32_to_f64" -> (()=>new IntToFloat, true, 1),
-    "i64_to_f64"  -> (()=>new IntToFloat, true, 2),
-    "ui64_to_f64" -> (()=>new IntToFloat, true, 3),
-    "i32_to_f32"  -> (()=>new IntToFloat, false, 0),
-    "ui32_to_f32" -> (()=>new IntToFloat, false, 1),
-    "i64_to_f32"  -> (()=>new IntToFloat, false, 2),
-    "ui64_to_f32" -> (()=>new IntToFloat, false, 3),
+    "i32_to_f64" -> (() => new IntToFloat, true, 0),
+    "ui32_to_f64" -> (() => new IntToFloat, true, 1),
+    "i64_to_f64" -> (() => new IntToFloat, true, 2),
+    "ui64_to_f64" -> (() => new IntToFloat, true, 3),
+    "i32_to_f32" -> (() => new IntToFloat, false, 0),
+    "ui32_to_f32" -> (() => new IntToFloat, false, 1),
+    "i64_to_f32" -> (() => new IntToFloat, false, 2),
+    "ui64_to_f32" -> (() => new IntToFloat, false, 3),
 
-    "f64_to_i32" ->  (()=>new FloatToInt, true, 0),
-    "f32_to_i32" ->  (()=>new FloatToInt, false, 0),
-    "f64_to_ui32" -> (()=>new FloatToInt, true, 1),
-    "f32_to_ui32" -> (()=>new FloatToInt, false, 1),
-    "f64_to_i64" ->  (()=>new FloatToInt, true, 2),
-    "f32_to_i64" ->  (()=>new FloatToInt, false, 2),
-    "f64_to_ui64" -> (()=>new FloatToInt, true, 3),
-    "f32_to_ui64" -> (()=>new FloatToInt, false, 3),
+    "f64_to_i32" -> (() => new FloatToInt, true, 0),
+    "f32_to_i32" -> (() => new FloatToInt, false, 0),
+    "f64_to_ui32" -> (() => new FloatToInt, true, 1),
+    "f32_to_ui32" -> (() => new FloatToInt, false, 1),
+    "f64_to_i64" -> (() => new FloatToInt, true, 2),
+    "f32_to_i64" -> (() => new FloatToInt, false, 2),
+    "f64_to_ui64" -> (() => new FloatToInt, true, 3),
+    "f32_to_ui64" -> (() => new FloatToInt, false, 3),
 
     // 'isDouble' was not used in FloatToFloat
-    "f32_to_f64" -> (()=>new F32toF64, true, 0),
-    "f64_to_f32" -> (()=>new F64toF32, true, 1),
+    "f32_to_f64" -> (() => new F32toF64, true, 0),
+    "f64_to_f32" -> (() => new F64toF32, true, 1),
 
-    "f64_le" -> (()=>new FCMP, true, 2),
-    "f64_lt" -> (()=>new FCMP, true, 3),
-    "f64_eq" -> (()=>new FCMP, true, 4),
-    "f32_le" -> (()=>new FCMP, false, 2),
-    "f32_lt" -> (()=>new FCMP, false, 3),
-    "f32_eq" -> (()=>new FCMP, false, 4),
+    "f64_le" -> (() => new FCMP, true, 2),
+    "f64_lt" -> (() => new FCMP, true, 3),
+    "f64_eq" -> (() => new FCMP, true, 4),
+    "f32_le" -> (() => new FCMP, false, 2),
+    "f32_lt" -> (() => new FCMP, false, 3),
+    "f32_eq" -> (() => new FCMP, false, 4),
 
-    "f64_add" -> (()=> new FMA, true, 0),
-    "f32_add" -> (()=> new FMA, false, 0),
-    "f64_sub" -> (()=> new FMA, true, 1),
-    "f32_sub" -> (()=> new FMA, false, 1),
-    "f64_mul" -> (()=> new FMA, true, 2),
-    "f32_mul" -> (()=> new FMA, false, 2)
+    "f64_add" -> (() => new FMA, true, 0),
+    "f32_add" -> (() => new FMA, false, 0),
+    "f64_sub" -> (() => new FMA, true, 1),
+    "f32_sub" -> (() => new FMA, false, 1),
+    "f64_mul" -> (() => new FMA, true, 2),
+    "f32_mul" -> (() => new FMA, false, 2),
 
+    "f64_mulAdd" -> (() => new FMA, true, 4),
+    "f32_mulAdd" -> (() => new FMA, false, 4)
   )
-  for(t <- tests){
+
+
+  def readLines(bufReader: BufferedReader, n: Int): List[String] = {
+    var lines = List[String]()
+    var line = ""
+    while ( (lines.size < n) && {line = bufReader.readLine(); line!=null}){
+      lines = lines :+ line
+    }
+    lines
+  }
+
+  for (t <- tests) {
     val (dutGen, isDouble, op) = testMap(t.name)
-    for(rm <- t.roundingModes){
+    for (rm <- t.roundingModes) {
       it should s"compute [${t.name}, rm=${rm.litValue()}] correctly" in {
+        val seed = Random.nextInt(10000)
+        val file = new File(s"./debug/${t.name}-${rm.litValue()}-$seed.test")
+        val genCaseCmd = s"./debug/testfloat_gen ${t.name} -${rmMap(rm)} -exact -tininessafter -seed $seed"
+        println(genCaseCmd)
+        val ret = (genCaseCmd #> file).!
+        assert(ret == 0, "generate test case fail!")
 
-        val input = s"./debug/testfloat_gen ${t.name} -${rmMap(rm)} -exact -tininessafter".!!
-        val testCases = input.split("\n").map(line => line.split(" "))
-        val annos = Seq(backendMap(t.backend)) ++ (if(t.writeVcd) Seq(WriteVcdAnnotation) else Nil)
-        test(new Delayer(dutGen())).withAnnotations(annos){ c =>
+        val bufferInputStrem = new BufferedInputStream(new FileInputStream(file))
+        val bufferReader = new BufferedReader(new InputStreamReader(bufferInputStrem), 10 * 1024 * 1024)
+        def batchSize = 10000
+        var input = List[String]()
+        while ({input = readLines(bufferReader, batchSize); input.nonEmpty}){
+          //...
+          val testCases = input.map(_.split(" "))
+          val annos = Seq(backendMap(t.backend)) ++ (if(t.writeVcd) Seq(WriteVcdAnnotation) else Nil)
+          test(new Delayer(dutGen())).withAnnotations(annos){ c =>
+            c.io.in.initSource().setSourceClock(c.clock)
+            c.io.out.initSink().setSinkClock(c.clock)
+            c.io.out.expectInvalid()
+            c.io.out.ready.poke(true.B)
 
-          c.io.in.initSource().setSourceClock(c.clock)
-          c.io.out.initSink().setSinkClock(c.clock)
-          c.io.out.expectInvalid()
+            def dutEnQueue(testCase: Array[String], idx: Int): Unit = {
+              val srcCnt = testCases.length - 2 // - output - fflags
+              c.io.in.enqueue(chiselTypeOf(c.io.in.bits).Lit(
+                _.op -> op.U,
+                _.rm -> rm,
+                _.isDouble -> isDouble.B,
+                _.a -> (if (srcCnt > 0) ("h" + testCase(0)).U(64.W) else 0.U(64.W)),
+                _.b -> (if (srcCnt > 1) ("h" + testCase(1)).U(64.W) else 0.U(64.W)),
+                _.c -> (if (srcCnt > 2) ("h" + testCase(2)).U(64.W) else 0.U(64.W))
+              ))
+            }
 
-          c.io.out.ready.poke(true.B)
+            def dutDeQueue(testCase: Array[String], idx: Int): Unit = {
+              val srcCnt = testCase.length - 2
+              val refResult = ("h" + testCase(srcCnt)).U(64.W)
+              val refFflags = ("h" + testCase(srcCnt + 1)).U
+              c.io.out.expectDequeue(
+                chiselTypeOf(c.io.out.bits).Lit(
+                  _.result -> refResult,
+                  _.fflags -> chiselTypeOf(c.io.out.bits.fflags).Lit(
+                    _.invalid -> refFflags(4),
+                    _.infinite -> refFflags(3),
+                    _.overflow -> refFflags(2),
+                    _.underflow -> refFflags(1),
+                    _.inexact -> refFflags(0))
+                ),
+                message = s"\nn:$idx testCase: ${testCase.mkString(" ")}\n" +
+                  s"dut res:${c.io.out.bits.result.peek().litValue().toString(16)} " +
+                  s"inv:${c.io.out.bits.fflags.invalid.peek().litValue()} " +
+                  s"inf:${c.io.out.bits.fflags.infinite.peek().litValue()} " +
+                  s"ov:${c.io.out.bits.fflags.overflow.peek().litValue()} " +
+                  s"uf:${c.io.out.bits.fflags.underflow.peek().litValue()} " +
+                  s"ix:${c.io.out.bits.fflags.inexact.peek().litValue()}" +
+                  s"\n"
+              )
+            }
 
-          def dutEnQueue(testCase: Array[String], idx: Int): Unit ={
-            val srcCnt = testCases.length - 2 // - output - fflags
-            c.io.in.enqueue(chiselTypeOf(c.io.in.bits).Lit(
-              _.op -> op.U,
-              _.rm -> rm,
-              _.isDouble -> isDouble.B,
-              _.a -> (if(srcCnt > 0) ("h"+testCase(0)).U(64.W) else 0.U(64.W)),
-              _.b -> (if(srcCnt > 1) ("h"+testCase(1)).U(64.W) else 0.U(64.W)),
-              _.c -> (if(srcCnt > 2) ("h"+testCase(2)).U(64.W) else 0.U(64.W))
-            ))
+            if (t.pipeline) {
+              fork {
+                testCases.zipWithIndex.foreach({ case (testCase, idx) => dutEnQueue(testCase, idx) })
+              }.fork {
+                testCases.zipWithIndex.foreach({ case (testCase, idx) => dutDeQueue(testCase, idx) })
+              }.join()
+            } else {
+              testCases.zipWithIndex.foreach({ case (testCase, idx) =>
+                dutEnQueue(testCase, idx)
+                dutDeQueue(testCase, idx)
+              })
+            }
+
           }
-
-          def dutDeQueue(testCase: Array[String], idx: Int): Unit ={
-            val srcCnt = testCase.length - 2
-            val refResult = ("h"+testCase(srcCnt)).U(64.W)
-            val refFflags = ("h"+testCase(srcCnt+1)).U
-            c.io.out.expectDequeue(
-              chiselTypeOf(c.io.out.bits).Lit(
-                _.result -> refResult,
-                _.fflags -> chiselTypeOf(c.io.out.bits.fflags).Lit(
-                  _.invalid -> refFflags(4),
-                  _.infinite -> refFflags(3),
-                  _.overflow -> refFflags(2),
-                  _.underflow -> refFflags(1),
-                  _.inexact -> refFflags(0))
-              ),
-              message = s"\nn:$idx testCase: ${testCase.mkString(" ")}\n" +
-                s"dut res:${c.io.out.bits.result.peek().litValue().toString(16)} " +
-                s"inv:${c.io.out.bits.fflags.invalid.peek().litValue()} " +
-                s"inf:${c.io.out.bits.fflags.infinite.peek().litValue()} " +
-                s"ov:${c.io.out.bits.fflags.overflow.peek().litValue()} " +
-                s"uf:${c.io.out.bits.fflags.underflow.peek().litValue()} " +
-                s"ix:${c.io.out.bits.fflags.inexact.peek().litValue()}" +
-                s"\n"
-            )
-          }
-
-          if(t.pipeline){
-            fork{
-              testCases.zipWithIndex.foreach({case (testCase, idx) => dutEnQueue(testCase, idx)})
-            }.fork{
-              testCases.zipWithIndex.foreach({case (testCase, idx) => dutDeQueue(testCase, idx)})
-            }.join()
-          } else {
-            testCases.zipWithIndex.foreach({case (testCase, idx) =>
-              dutEnQueue(testCase, idx)
-              dutDeQueue(testCase, idx)
-            })
-          }
-
         }
+        file.delete()
       }
     }
   }

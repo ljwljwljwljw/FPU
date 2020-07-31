@@ -24,3 +24,6 @@ berkeley-testfloat-3/build/Linux-x86_64-GCC/testfloat_gen: berkeley-testfloat-3/
 
 unit-test: ./testfloat_gen
 	cd ../ && sbt 'testOnly -- $(FPU_TEST_ARGS)'
+
+clean:
+	rm ./*.test
