@@ -25,7 +25,7 @@ berkeley-testfloat和riscv-tests中的rvd/rvf测试，
 FPU各个功能部件的接口都采用握手信号，
 可以根据实际需要连接这些功能部件
 
-`src/main/scala/top`下提供了一个`DummyTop`作为示例,
+`src/main/scala/fpu.top`下提供了一个`DummyTop`作为示例,
 通过
 ```
 make verilog 
