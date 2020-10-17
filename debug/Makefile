@@ -1,4 +1,6 @@
-FPU_TEST_ARGS ?= -P4
+TEST_TOP = fpu.FPUSubModuleTester
+
+ARGS ?= 
 
 .DEFAULT_GOAL = unit-test
 
@@ -23,7 +25,7 @@ berkeley-testfloat-3/build/Linux-x86_64-GCC/testfloat_gen: berkeley-testfloat-3/
 	cp berkeley-testfloat-3/build/Linux-x86_64-GCC/testfloat_gen .
 
 unit-test: ./testfloat_gen
-	cd ../ && sbt 'testOnly -- $(FPU_TEST_ARGS)'
+	cd ../ && mill FPU.test.testOnly -o -s $(TEST_TOP) $(ARGS)
 
 clean:
 	rm ./*.test

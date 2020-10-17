@@ -115,7 +115,7 @@ class FPUSubModuleTester extends FlatSpec
   )
 
 
-  val tests = fma_tests ++ fadd_tests ++ fmul_tests ++
+  val tests = fadd_tests ++ fmul_tests ++
     sqrt_tests ++ div_tests ++
       fcmp_tests ++ i2f_tests ++
       f2i_tests ++ f2f_tests
