@@ -170,7 +170,7 @@ class FMA extends FPUSubModule with HasPipelineReg {
   val alignedAMantNeg = -alignedAMant
   val effSub = s1_prodSign ^ s1_aSign
 
-  val mul_prod = mult.io.carry.tail(1) + mult.io.sum.tail(1)
+  val mul_prod = mult.io.prod.tail(1) //mult.io.carry.tail(1) + mult.io.sum.tail(1)
 
   val s2_isDouble = S2Reg(s1_isDouble)
   val s2_rm = S2Reg(s1_rm)
@@ -198,10 +198,10 @@ class FMA extends FPUSubModule with HasPipelineReg {
     * Stage 3: A + Prod => adder result
     *****************************************************************/
 
-  val prodMinusA = Cat(s2_prod, 0.U(3.W)) + s2_aMantNeg
+  val prodMinusA = Adder(Cat(s2_prod, 0.U(3.W)), s2_aMantNeg)
   val prodMinusA_Sign = prodMinusA.head(1).asBool()
   val aMinusProd = -prodMinusA
-  val prodAddA = Cat(s2_prod, 0.U(3.W)) + s2_aMant
+  val prodAddA = Adder(Cat(s2_prod, 0.U(3.W)), s2_aMant)
 
   val lza = Module(new LZA(ADD_WIDTH+4))
   lza.io.a := s2_aMant

@@ -10,6 +10,7 @@ class ArrayMultiplier(len: Int, regDepth: Int = 0, realArraryMult: Boolean = fal
     val a, b = Input(UInt(len.W))
     val reg_en = Input(Bool())
     val carry, sum = Output(UInt((2*len).W))
+    val prod = Output(UInt((2*len).W))
   })
 
   val (a, b) = (io.a, io.b)
@@ -120,5 +121,6 @@ class ArrayMultiplier(len: Int, regDepth: Int = 0, realArraryMult: Boolean = fal
 
   io.sum := sum
   io.carry := carry
+  io.prod := io.sum + io.carry
 }
 

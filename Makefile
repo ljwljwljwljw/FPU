@@ -1,6 +1,6 @@
 ARGS ?= -X verilog --target-dir build
 
-TOP = fpu.top.DummyTop
+TOP = fpu.top.SplitModules
 
 BUILD_DIR = ./build
 
