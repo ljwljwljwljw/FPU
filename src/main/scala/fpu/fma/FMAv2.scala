@@ -6,7 +6,7 @@ import fpu._
 import fpu.util._
 
 
-class FMA extends FPUSubModule with HasPipelineReg {
+class FMAv2 extends FPUSubModule with HasPipelineReg {
   def latency = 5
 
   def UseRealArraryMult = true
@@ -162,15 +162,13 @@ class FMA extends FPUSubModule with HasPipelineReg {
     * Stage 2: align A | compute product (B*C)
     *****************************************************************/
 
-  val alignedAMant = Wire(UInt((ADD_WIDTH+4).W))
-  alignedAMant := Cat(
-    0.U(1.W), // sign bit
+  val alignedAMant = Wire(UInt((ADD_WIDTH+3).W))
+  alignedAMant :=
     ShiftRightJam(s1_aMant, Mux(s1_discardProdMant, 0.U, s1_expDiff.asUInt()), ADD_WIDTH+3)
-  )
-  val alignedAMantNeg = -alignedAMant
+
+  val alignedAMantInv = (~alignedAMant).asUInt()
   val effSub = s1_prodSign ^ s1_aSign
 
-  val mul_prod = mult.io.carry.tail(1) + mult.io.sum.tail(1)
 
   val s2_isDouble = S2Reg(s1_isDouble)
   val s2_rm = S2Reg(s1_rm)
@@ -182,8 +180,9 @@ class FMA extends FPUSubModule with HasPipelineReg {
   val s2_expPreNorm = S2Reg(Mux(s1_discardAMant || !s1_discardProdMant, s1_prodExpAdj, s1_aExpRaw))
   val s2_invalid = S2Reg(s1_invalid)
 
-  val s2_prod = S2Reg(mul_prod)
-  val s2_aMantNeg = S2Reg(alignedAMantNeg)
+  val s2_mulSum = S2Reg(mult.io.sum.tail(1))
+  val s2_mulCarry = S2Reg(mult.io.carry.tail(1))
+  val s2_aMantInv = S2Reg(alignedAMantInv)
   val s2_aMant = S2Reg(alignedAMant)
   val s2_effSub = S2Reg(effSub)
 
@@ -198,36 +197,46 @@ class FMA extends FPUSubModule with HasPipelineReg {
     * Stage 3: A + Prod => adder result
     *****************************************************************/
 
-  val prodMinusA = Adder(Cat(s2_prod, 0.U(3.W)), s2_aMantNeg)
-  val prodMinusA_Sign = prodMinusA.head(1).asBool()
-  val aMinusProd = -prodMinusA
-  val prodAddA = Adder(Cat(s2_prod, 0.U(3.W)), s2_aMant)
+  class Adder164 extends Module {
+    val io = IO(new Bundle() {
+      val prodSum, prodCarry = Input(UInt(106.W))
+      val addend = Input(UInt(164.W))
+      val out = Output(UInt(165.W))
+    })
+    val addend_high55 = io.addend.head(55)
+    val addend_low106 = io.addend.tail(55).head(106)
+    val addend_grs = io.addend(2, 0)
+    val csa106 = Module(new CSA3_2(106))
+    csa106.io.in(0) := io.prodSum
+    csa106.io.in(1) := io.prodCarry
+    csa106.io.in(2) := addend_low106
 
-  val lza = Module(new LZA(ADD_WIDTH+4))
-  lza.io.a := s2_aMant
-  lza.io.b := Cat(s2_prod, 0.U(3.W))
+    val addLow106_res = Adder(csa106.io.out(0), Cat(csa106.io.out(1).tail(1), 0.U(1.W)))
+    val high55_inc = ((addend_low106.head(1) +& io.prodSum.head(1)) + io.prodCarry.head(1))(1)
+    val incHigh55_res = addend_high55 +& high55_inc
 
-  val effSubLez = lza.io.out - 1.U
-  val effAddLez = PriorityEncoder(prodAddA.tail(1).asBools().reverse)
-  val res = Mux(s2_effSub,
-    Mux(prodMinusA_Sign,
-      aMinusProd,
-      prodMinusA
-    ),
-    prodAddA
+    val res_cout = incHigh55_res.head(1).asBool()
+    io.out := Cat(incHigh55_res, addLow106_res, addend_grs)
+  }
+
+  val adder164 = Module(new Adder164)
+  adder164.io.prodSum := s2_mulSum
+  adder164.io.prodCarry := s2_mulCarry
+  adder164.io.addend := Mux(s2_effSub, s2_aMantInv, s2_aMant)
+
+  val add164_res = adder164.io.out
+  val add164_cout = add164_res.head(1).asBool()
+  val add164_res_abs = Mux(s2_effSub,
+    Mux(add164_cout, add164_res.tail(1) + 1.U, add164_res.tail(1)),
+    add164_res.tail(1)
   )
-  val resSign = Mux(s2_prodSign,
-    Mux(s2_aSign,
-      true.B, // -(b*c) - a
-      !prodMinusA_Sign        // -(b*c) + a
-    ),
-    Mux(s2_aSign,
-      prodMinusA_Sign, // b*c - a
-      false.B         // b*c + a
-    )
-  )
+
+
+
+  val res = add164_res_abs
+  val resSign = add164_cout
   val mantPreNorm = res.tail(1)
-  val normShift = Mux(s2_effSub, effSubLez, effAddLez)
+  val normShift = PriorityEncoder(add164_res)
 
   val roundingInc = MuxLookup(s2_rm, "b10".U(2.W), Seq(
     RoudingMode.RDN -> Mux(resSign, "b11".U, "b00".U),
@@ -284,7 +293,7 @@ class FMA extends FPUSubModule with HasPipelineReg {
   val s4_expPostNorm = S4Reg(expPostNorm)
   val s4_invalid = S4Reg(s3_invalid)
 
-  FPUDebug(true){
+  FPUDebug(){
     when(valids(3) && ready){
       printf(p"[s4] expPreNorm:${s3_expPreNorm} normShift:${s3_normShift} expPostNorm:${expPostNorm} " +
         p"denormShift:${denormShift}" +

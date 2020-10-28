@@ -45,7 +45,7 @@ case class FpuTest
 
 class FPUSubModuleTester extends FlatSpec
   with ChiselScalatestTester
-  with Matchers {
+  with Matchers with ParallelTestExecution {
 
   implicit def decoupledToDriver[T <: Data](x: ReadyValidIO[T]) = new MyDecoupledDriver[T](x)
 
@@ -115,10 +115,14 @@ class FPUSubModuleTester extends FlatSpec
   )
 
 
-  val tests = fadd_tests ++ fmul_tests ++
-    sqrt_tests ++ div_tests ++
-      fcmp_tests ++ i2f_tests ++
-      f2i_tests ++ f2f_tests
+  val mytests = Seq(FpuTest("f64_add", rmAll, backend = "verilator", pipeline = false))
+
+  val tests = mytests
+
+//  val tests = fadd_tests ++ fmul_tests ++
+//    sqrt_tests ++ div_tests ++
+//      fcmp_tests ++ i2f_tests ++
+//      f2i_tests ++ f2f_tests
 
   val backendMap = Map(
     "treadle" -> TreadleBackendAnnotation,
@@ -168,9 +172,9 @@ class FPUSubModuleTester extends FlatSpec
     "f32_lt" -> (() => new FCMP, false, 3),
     "f32_eq" -> (() => new FCMP, false, 4),
 
-    "f64_add" -> (() => new FMA, true, 0),
+    "f64_add" -> (() => new FMANew, true, 0),
     "f32_add" -> (() => new FMA, false, 0),
-    "f64_sub" -> (() => new FMA, true, 1),
+    "f64_sub" -> (() => new FMANew, true, 1),
     "f32_sub" -> (() => new FMA, false, 1),
     "f64_mul" -> (() => new FMA, true, 2),
     "f32_mul" -> (() => new FMA, false, 2),
@@ -195,7 +199,7 @@ class FPUSubModuleTester extends FlatSpec
       it should s"compute [${t.name}, rm=${rm.litValue()}] correctly" in {
         val seed = Random.nextInt(10000)
         val file = new File(s"./debug/${t.name}-${rm.litValue()}-$seed.test")
-        val genCaseCmd = s"./debug/testfloat_gen ${t.name} -${rmMap(rm)} -exact -tininessafter -seed $seed"
+        val genCaseCmd = s"./debug/testfloat_gen ${t.name} -${rmMap(rm)} -exact -tininessafter"
         println(genCaseCmd)
         val ret = (genCaseCmd #> file).!
         assert(ret == 0, "generate test case fail!")
@@ -226,10 +230,19 @@ class FPUSubModuleTester extends FlatSpec
               ))
             }
 
+
+            def dumpFloat64(x: Long) = {
+              val sign = (x >> (Float64.expWidth + Float64.mantWidth)) & 1
+              val exp =  (x >> Float64.mantWidth) & 0x7ff
+              val mant = x & 0xfffffffffffffL
+              println(s"ref: sign:$sign exp:$exp mant:${mant.toHexString}\n")
+            }
+
             def dutDeQueue(testCase: Array[String], idx: Int): Unit = {
               val srcCnt = testCase.length - 2
               val refResult = ("h" + testCase(srcCnt)).U(64.W)
               val refFflags = ("h" + testCase(srcCnt + 1)).U
+              dumpFloat64(refResult.litValue().toLong)
               c.io.out.expectDequeue(
                 chiselTypeOf(c.io.out.bits).Lit(
                   _.result -> refResult,

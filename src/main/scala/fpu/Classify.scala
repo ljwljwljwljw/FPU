@@ -23,6 +23,7 @@ class Classify(expWidth: Int, mantWidth: Int) extends Module{
     val isSubnormal = Output(Bool())
     val isZero = Output(Bool())
     val isSubnormalOrZero = Output(Bool())
+    val isZeroMant = Output(Bool())
   })
   val flpt = io.in.asTypeOf(new FloatPoint(expWidth, mantWidth))
   val (sign, exp, mant) = (flpt.sign, flpt.exp, flpt.mant)
@@ -50,5 +51,6 @@ class Classify(expWidth: Int, mantWidth: Int) extends Module{
 
   io.isSubnormal := isSubnormOrZero && !mantIsZero
   io.isZero := isSubnormOrZero && mantIsZero
+  io.isZeroMant := mantIsZero
   io.isSubnormalOrZero := isSubnormOrZero
 }

@@ -4,13 +4,12 @@ import chisel3._
 import chisel3.util._
 import fpu.util._
 
-class ArrayMultiplier(len: Int, regDepth: Int = 0, realArraryMult: Boolean = false) extends Module {
+class ArrayMultiplier(len: Int, regDepth: Int = 0, realArraryMult: Boolean = false, hasReg: Boolean = true) extends Module {
 
   val io = IO(new Bundle() {
     val a, b = Input(UInt(len.W))
     val reg_en = Input(Bool())
     val carry, sum = Output(UInt((2*len).W))
-    val prod = Output(UInt((2*len).W))
   })
 
   val (a, b) = (io.a, io.b)
@@ -111,16 +110,19 @@ class ArrayMultiplier(len: Int, regDepth: Int = 0, realArraryMult: Boolean = fal
         cout1 = c1
         cout2 = c2
       }
-      val needReg = depth == regDepth
+      val needReg = hasReg && (depth == regDepth)
       val toNextLayer = if(needReg) columns_next.map(_.map(RegEnable(_, io.reg_en))) else columns_next
       addAll(toNextLayer, depth+1)
     }
   }
 
-  val (sum, carry) = if(realArraryMult) addAll(cols = columns, depth = 0) else (RegEnable(a*b, io.reg_en), 0.U)
+  val (sum, carry) = if(realArraryMult){
+    addAll(cols = columns, depth = 0)
+  } else {
+    if(hasReg) (RegEnable(a*b, io.reg_en), 0.U) else (a*b, 0.U)
+  }
 
   io.sum := sum
   io.carry := carry
-  io.prod := io.sum + io.carry
 }
 
