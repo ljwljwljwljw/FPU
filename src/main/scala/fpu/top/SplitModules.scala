@@ -18,7 +18,7 @@ object SplitModules extends App {
     () => new DivSqrt
   )
 
-  val fma = Seq(() => new FMANew(enableDebug = false))
+  val fma = Seq(() => new FMANew)
 
   val stage = new ChiselStage
 

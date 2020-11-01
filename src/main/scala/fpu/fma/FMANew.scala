@@ -13,7 +13,7 @@ trait HasFmaConst {
   def ADD_WIDTH: Int = D_MANT_WIDTH + 2 + 2*D_MANT_WIDTH + 2
 }
 
-class FMANew(enableDebug: Boolean = true) extends FPUSubModule with HasFmaConst {
+class FMANew extends FPUSubModule with HasFmaConst {
 
   val in = io.in
   val (rs0, rs1, rs2) = (in.bits.a, in.bits.b, in.bits.c)
@@ -39,11 +39,21 @@ class FMANew(enableDebug: Boolean = true) extends FPUSubModule with HasFmaConst 
     Seq(FPUOpType.fsub, FPUOpType.fnmsub, FPUOpType.fnmadd).map(_(2, 0))
   )
 
-  val a = Mux(isFma, rs2, Mux(isMul, zero, rs1))
-  val b = rs0
-  val c = Mux(isAddSub, one, rs1)
-  FPUDebug(enableDebug){
-    printf(p"A:${H(a)} B:${H(b)} C:${H(c)}\n")
+  /*
+            fadd   ->  a + b * 1
+            fsub   ->  a - b * 1
+            fmul   ->  0 + b * c
+            fmadd  ->  a + b * c
+            fmsub  -> -a + b * c
+            fnmsub ->  a - b * c
+            fnmadd -> -a - b * c
+  */
+
+  val a = Mux(isFma, rs2, Mux(isMul, zero, rs0)) //Mux(isFma, rs2, Mux(isMul, zero, rs1))
+  val b = rs1
+  val c = Mux(isAddSub, one, rs0)
+  FPUDebug(){
+    printf(p"A:${H(a)} B:${H(b)} C:${H(c)} rm=${rm}\n")
   }
   val operands = Seq(a, b, c).map(x => Mux(isDouble, x, extF32ToF64(x)))
   val classify = Array.fill(3)(
@@ -75,7 +85,7 @@ class FMANew(enableDebug: Boolean = true) extends FPUSubModule with HasFmaConst 
     signs(i) := s
     exps(i) := e
     mants(i) := m
-    FPUDebug(enableDebug){
+    FPUDebug(){
       dump(i)
     }
   }
@@ -86,23 +96,16 @@ class FMANew(enableDebug: Boolean = true) extends FPUSubModule with HasFmaConst 
     printf(p"[$i] isSubmormal:${classify(i).isSubnormal} isNaN:${classify(i).isNaN} isInf:${classify(i).isInf}\n")
   }
 
-  /*
-      Check if we need to invert A to get |mantB * mantC - mantA|
-          fadd   ->  a + b * 1
-          fsub   ->  a - b * 1
-          fmul   ->  0 + b * c
-          fmadd  ->  a + b * c
-          fmsub  -> -a + b * c
-          fnmsub ->  a - b * c
-          fnmadd -> -a - b * c
-   */
-  val aSign = signs.head
-  val aRealSign = aSign ^ isOneOf(op, Seq(FPUOpType.fmsub, FPUOpType.fnmadd).map(_(2, 0)))
+
   val prodSign = signs(1) ^ signs(2)
+  val aSign = Mux(isMul, prodSign, signs.head)
   val prodRealSign = prodSign ^ isOneOf(op, Seq(FPUOpType.fsub, FPUOpType.fnmsub, FPUOpType.fnmadd).map(_(2, 0)))
+  val aRealSign = aSign ^ isOneOf(op, Seq(FPUOpType.fmsub, FPUOpType.fnmadd).map(_(2, 0)))
+  val doSub = aRealSign ^ prodRealSign
 
   val hasNaN = classify.map(_.isNaN).reduce(_||_)
   val hasSNaN = classify.map(_.isSNaN).reduce(_||_)
+  val prodHasNaN = classify.drop(1).map(_.isNaN).reduce(_||_)
 
   val isInf = classify.map(_.isInf)
   val aIsInf = isInf(0)
@@ -111,7 +114,7 @@ class FMANew(enableDebug: Boolean = true) extends FPUSubModule with HasFmaConst 
 
   val aIsZero = classify(0).isZero
   val prodIsZero = classify.drop(1).map(_.isZero).reduce(_||_)
-  val addInfInvalid = (aIsInf & prodHasInf & (aSign ^ prodSign)) & !(aIsInf ^ prodHasInf)
+  val addInfInvalid = !prodHasNaN && (aIsInf && prodHasInf && doSub)
   val zeroMulInf = prodIsZero && prodHasInf
 
   val infInvalid = addInfInvalid || zeroMulInf
@@ -124,21 +127,17 @@ class FMANew(enableDebug: Boolean = true) extends FPUSubModule with HasFmaConst 
       Float32.defaultNaN
     ),
     aIsInf -> Mux(isDouble,
-      Cat(aSign, Float64.posInf.tail(1)),
-      Cat(aSign, Float32.posInf.tail(1))
+      Cat(aRealSign, Float64.posInf.tail(1)),
+      Cat(aRealSign, Float32.posInf.tail(1))
     ),
     prodHasInf -> Mux(isDouble,
-      Cat(prodSign, Float64.posInf.tail(1)),
-      Cat(prodSign, Float32.posInf.tail(1))
+      Cat(prodRealSign, Float64.posInf.tail(1)),
+      Cat(prodRealSign, Float32.posInf.tail(1))
     )
   ))
 
-  val doSub = aRealSign ^ prodRealSign
 
-  val zeroResultSign = Mux(op(2,1) === "b01".U,
-    prodSign,
-    (aSign & prodSign) | ((aSign | prodSign) & rm===RoudingMode.RDN)
-  )
+
 
   /*
       Align A
@@ -149,7 +148,7 @@ class FMANew(enableDebug: Boolean = true) extends FPUSubModule with HasFmaConst 
   expDist := prodExp - (exps(0) +& (Float64.expBiasInt - INITIAL_EXP_DIFF).S)
 
   val discardProdMant = expDist < 0.S || prodIsZero
-  val discardAMant = expDist > (ADD_WIDTH-1).S || aIsZero
+  val discardAMant = !prodIsZero && (expDist > (ADD_WIDTH-1).S || aIsZero)
   val useClosePath = !discardAMant && (prodIsZero || (expDist <= D_MANT_WIDTH.S))
   val (mantA, mantB, mantC)  = (mants(0), mants(1), mants(2))
   val mantAPaddingZeros = Cat(mantA, 0.U((ADD_WIDTH - D_MANT_WIDTH).W))
@@ -171,7 +170,7 @@ class FMANew(enableDebug: Boolean = true) extends FPUSubModule with HasFmaConst 
       )
     ),
     (1 until D_MANT_WIDTH).map(
-      i => (expDist===(ADD_WIDTH-D_MANT_WIDTH+i).S) -> mantA(i-1, 0).orR()
+      i => (alignShiftAmt===(ADD_WIDTH-D_MANT_WIDTH+i).U) -> mantA(i-1, 0).orR()
     )
   )
   val alignedMantAPos = Cat(alignedMantARaw, alignSticky)
@@ -179,9 +178,9 @@ class FMANew(enableDebug: Boolean = true) extends FPUSubModule with HasFmaConst 
   val alignedMantA = Mux(doSub, alignedMantAInv, alignedMantAPos)
 
 
-  FPUDebug(enableDebug){
-    printf(p"doSub:${doSub} expDiff:${expDist} alignShiftAmt:${alignShiftAmt} cpath:${useClosePath}\n")
-    printf(p"discardMantA:${discardAMant} discardProdMant:${discardProdMant}\n")
+  FPUDebug(){
+    printf(p"doSub:${doSub} expDiff:${expDist} alignShiftAmt:${alignShiftAmt} cpath:${useClosePath} special:${specialCaseHappen}\n")
+    printf(p"discardMantA:${discardAMant} discardProdMant:${discardProdMant} alignSticky:${alignSticky}\n")
   }
 
   /*
@@ -194,7 +193,7 @@ class FMANew(enableDebug: Boolean = true) extends FPUSubModule with HasFmaConst 
 
   val prodSum = Mux(prodIsZero, 0.U, multiplier.io.sum.tail(1))
   val prodCarry = Mux(prodIsZero, 0.U, multiplier.io.carry.tail(1))
-  FPUDebug(enableDebug){
+  FPUDebug(){
     printf(p"prod:${Hexadecimal(prodSum + prodCarry)}\n")
   }
 
@@ -209,7 +208,7 @@ class FMANew(enableDebug: Boolean = true) extends FPUSubModule with HasFmaConst 
   csa32.io.in(0) := prodSum
   csa32.io.in(1) := prodCarry
   csa32.io.in(2) := mantALowBits
-  FPUDebug(enableDebug){
+  FPUDebug(){
     printf(p"prodSum:${H(prodSum)} prodCarry:${H(prodCarry)}\n")
   }
 
@@ -226,7 +225,7 @@ class FMANew(enableDebug: Boolean = true) extends FPUSubModule with HasFmaConst 
     mantAGRS
   )
 
-  FPUDebug(enableDebug){
+  FPUDebug(){
     printf(p"mantSum:${H(mantSum)}\n")
   }
 
@@ -240,8 +239,9 @@ class FMANew(enableDebug: Boolean = true) extends FPUSubModule with HasFmaConst 
     mantSum.head(cpath_mantLen)
   )
   val cpath_addSticky = mantSum.tail(cpath_mantLen).orR()
+  val cpath_subSticky = !mantSum.tail(cpath_mantLen).andR()
   val cpath_mantSticky = Mux(doSub,
-    !cpath_addSticky,
+    cpath_subSticky,
     cpath_addSticky
   )
   val cpath_mantPreNorm = Cat(cpath_mantAbs, cpath_mantSticky)
@@ -269,10 +269,14 @@ class FMANew(enableDebug: Boolean = true) extends FPUSubModule with HasFmaConst 
     cpath_mantShift.head(D_MANT_WIDTH+2),
     cpath_mantShift.tail(D_MANT_WIDTH+2).orR()
   )
-  val cpath_sign = aRealSign
+  val cpath_isZero = aIsZero && prodIsZero
+  val cpath_sign = Mux(cpath_isZero,
+    (aRealSign & prodRealSign) | ((aRealSign | prodRealSign) & rm===RoudingMode.RDN),
+    aRealSign
+  )
   val cpath_exp = exps(0) + cpath_expAdj
 
-  FPUDebug(enableDebug){
+  FPUDebug(){
     printf(p"cpath: sticky:$cpath_mantSticky mantAbs:${H(cpath_mantAbs)}\n")
     printf(p"cpath: lez:${cpath_mantPreNormLez} expAdj:${cpath_expAdj}\n")
     printf(p"cpath: sign:$cpath_sign exp:$cpath_exp " + mantWithGRStoP(cpath_mant) + "\n")
@@ -288,18 +292,22 @@ class FMANew(enableDebug: Boolean = true) extends FPUSubModule with HasFmaConst 
   )
   val fpath_lez = PriorityEncoder(fpath_mantAbs.asBools().reverse)
   val fpath_mant = ShiftLeftJam(fpath_mantAbs, fpath_lez, D_MANT_WIDTH+3)
-  val fpath_sign = prodRealSign ^ fpath_mantSumSign
+  val fpath_isZero = !fpath_mant.head(1).asBool()
+  val fpath_sign = Mux(fpath_isZero,
+    rm === RoudingMode.RDN,
+    prodRealSign ^ fpath_mantSumSign
+  )
   val fpath_exp = prodExpAdj - fpath_lez.toSInt - Float64.expBias.toSInt
 
-  FPUDebug(enableDebug){
-    printf(p"fpath: lez:${fpath_lez} mantAbs:${H(fpath_mantAbs)}\n")
+  FPUDebug(){
+    printf(p"fpath: lez:${fpath_lez} mantAbs:${H(fpath_mantAbs)} prodRealSign:${prodRealSign} fmantSumSign:${fpath_mantSumSign}\n")
   }
 
   def mantWithGRStoP(x: UInt) = {
     p"mant:${H(x.head(D_MANT_WIDTH))} g:${x(2)} r:${x(1)} s:${x(0)}"
   }
 
-  FPUDebug(enableDebug){
+  FPUDebug(){
     printf(p"fpath: sign:$fpath_sign exp:$fpath_exp " + mantWithGRStoP(fpath_mant) + "\n")
   }
 
@@ -316,7 +324,7 @@ class FMANew(enableDebug: Boolean = true) extends FPUSubModule with HasFmaConst 
   val common_mantNorm = Mux(useClosePath, cpath_mant, fpath_mant)
   val common_mantDeNorm = ShiftRightJam(common_mantNorm, denormShift.asUInt(), D_MANT_WIDTH+3)
   val common_mantUnrounded = Mux(needDenormShift, common_mantDeNorm, common_mantNorm)
-  FPUDebug(enableDebug){
+  FPUDebug(){
     printf(p"denormShift:${denormShift}\n")
     printf(p"common: exp:${common_exp}\n")
   }
@@ -330,7 +338,8 @@ class FMANew(enableDebug: Boolean = true) extends FPUSubModule with HasFmaConst 
   rounding.io.rm := rm
   rounding.io.specialCaseHappen := specialCaseHappen
 
-  val isZeroResult = rounding.io.isZeroResult
+  //val isZeroResult = rounding.io.isZeroResult
+  val isZeroResult = prodIsZero && aIsZero
   val expRounded = rounding.io.expRounded
   val mantRounded = rounding.io.mantRounded
   val overflow = rounding.io.overflow
@@ -338,11 +347,11 @@ class FMANew(enableDebug: Boolean = true) extends FPUSubModule with HasFmaConst 
   val inexact = rounding.io.inexact
 
   val common_result = Cat(
-    Mux(isZeroResult, zeroResultSign, common_sign),
+    common_sign,
     expRounded(Float64.expWidth-1, 0),
     mantRounded(Float64.mantWidth-1, 0)
   )
-  FPUDebug(enableDebug){
+  FPUDebug(){
     printf(p"after round: sign:${common_sign} " +
       p"exp:${expRounded(Float64.expWidth-1, 0)} mant:${H(mantRounded(Float64.mantWidth-1, 0))}\n")
   }

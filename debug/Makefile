@@ -1,4 +1,4 @@
-TEST_TOP = fpu.FPUSubModuleTester
+TEST_TOP = fpu.TestRunner
 
 ARGS ?= 
 
@@ -25,7 +25,10 @@ berkeley-testfloat-3/build/Linux-x86_64-GCC/testfloat_gen: berkeley-testfloat-3/
 	cp berkeley-testfloat-3/build/Linux-x86_64-GCC/testfloat_gen .
 
 unit-test: ./testfloat_gen
-	cd ../ && mill FPU.test.testOnly -o -s $(TEST_TOP) $(ARGS)
+	@#cd ../ && mill FPU.test.testOnly -o -s $(TEST_TOP) $(ARGS)
+	cd ../ && mill FPU.test.runMain $(TEST_TOP) $(ARGS)
 
 clean:
-	rm ./*.test
+	rm -rf ./tests
+	rm ./*.log
+	rm -rf ../test_run_dir

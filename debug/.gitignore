@@ -1,4 +1,5 @@
 testfloat_gen
 berkeley-softfloat-3
 berkeley-testfloat-3
-*.test
+tests
+*.log

@@ -198,10 +198,10 @@ class FMA extends FPUSubModule with HasPipelineReg {
     * Stage 3: A + Prod => adder result
     *****************************************************************/
 
-  val prodMinusA = Adder(Cat(s2_prod, 0.U(3.W)), s2_aMantNeg)
+  val prodMinusA = Cat(s2_prod, 0.U(3.W)) + s2_aMantNeg
   val prodMinusA_Sign = prodMinusA.head(1).asBool()
   val aMinusProd = -prodMinusA
-  val prodAddA = Adder(Cat(s2_prod, 0.U(3.W)), s2_aMant)
+  val prodAddA = Cat(s2_prod, 0.U(3.W)) + s2_aMant
 
   val lza = Module(new LZA(ADD_WIDTH+4))
   lza.io.a := s2_aMant
@@ -284,7 +284,7 @@ class FMA extends FPUSubModule with HasPipelineReg {
   val s4_expPostNorm = S4Reg(expPostNorm)
   val s4_invalid = S4Reg(s3_invalid)
 
-  FPUDebug(true){
+  FPUDebug(){
     when(valids(3) && ready){
       printf(p"[s4] expPreNorm:${s3_expPreNorm} normShift:${s3_normShift} expPostNorm:${expPostNorm} " +
         p"denormShift:${denormShift}" +
