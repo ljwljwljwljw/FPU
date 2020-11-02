@@ -152,7 +152,7 @@ class FMA extends FPUSubModule with HasPipelineReg {
   val s1_invalid = S1Reg(invalid)
 
   FPUDebug(){
-    when(valids(1) && ready){
+    when(valids(1) && rdyVec(1)){
       printf(p"[s1] prodExp+56:${s1_prodExpAdj} aExp:${s1_aExpRaw} diff:${s1_expDiff}\n")
     }
   }
@@ -189,7 +189,7 @@ class FMA extends FPUSubModule with HasPipelineReg {
 
 
   FPUDebug(){
-    when(valids(1) && ready){
+    when(valids(1) && rdyVec(1)){
       printf(p"[s2] discardAMant:${s1_discardAMant} discardProd:${s1_discardProdMant} \n")
     }
   }
@@ -285,7 +285,7 @@ class FMA extends FPUSubModule with HasPipelineReg {
   val s4_invalid = S4Reg(s3_invalid)
 
   FPUDebug(){
-    when(valids(3) && ready){
+    when(valids(3) && rdyVec(3)){
       printf(p"[s4] expPreNorm:${s3_expPreNorm} normShift:${s3_normShift} expPostNorm:${expPostNorm} " +
         p"denormShift:${denormShift}" +
         p"" +
@@ -343,7 +343,7 @@ class FMA extends FPUSubModule with HasPipelineReg {
   val s5_ovSetInf = S5Reg(s4_ovSetInf)
 
   FPUDebug(){
-    when(valids(4) && ready){
+    when(valids(4) && rdyVec(4)){
       printf(p"[s5] expPostNorm:${s4_expPostNorm} expRounded:${expRounded}\n")
     }
   }

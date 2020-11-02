@@ -3,7 +3,7 @@ package fpu.top
 import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
 import fpu.divsqrt.DivSqrt
 import fpu.{F32toF64, F64toF32, FCMP, FMV, FloatToInt, IntToFloat}
-import fpu.fma.{FMA, FMANew, FMAv2}
+import fpu.fma.{FMA, FMANew, FMAPipeline}
 
 object SplitModules extends App {
 
@@ -18,7 +18,7 @@ object SplitModules extends App {
     () => new DivSqrt
   )
 
-  val fma = Seq(() => new FMANew)
+  val fma = Seq(() => new FMAPipeline)
 
   val stage = new ChiselStage
 

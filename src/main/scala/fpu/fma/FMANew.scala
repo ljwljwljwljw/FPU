@@ -180,7 +180,7 @@ class FMANew extends FPUSubModule with HasFmaConst {
 
   FPUDebug(){
     printf(p"doSub:${doSub} expDiff:${expDist} alignShiftAmt:${alignShiftAmt} cpath:${useClosePath} special:${specialCaseHappen}\n")
-    printf(p"discardMantA:${discardAMant} discardProdMant:${discardProdMant} alignSticky:${alignSticky}\n")
+    printf(p"discardMantA:${discardAMant} discardProdMant:${discardProdMant} alignSticky:${alignSticky} invalid:${invalid}\n")
   }
 
   /*
@@ -194,6 +194,7 @@ class FMANew extends FPUSubModule with HasFmaConst {
   val prodSum = Mux(prodIsZero, 0.U, multiplier.io.sum.tail(1))
   val prodCarry = Mux(prodIsZero, 0.U, multiplier.io.carry.tail(1))
   FPUDebug(){
+    printf(p"alignedMantA:${Hexadecimal(alignedMantA)}\n")
     printf(p"prod:${Hexadecimal(prodSum + prodCarry)}\n")
   }
 
@@ -224,6 +225,8 @@ class FMANew extends FPUSubModule with HasFmaConst {
     csaSum.tail(1),
     mantAGRS
   )
+  println(mantSum.getWidth)
+  println(alignedMantA.getWidth)
 
   FPUDebug(){
     printf(p"mantSum:${H(mantSum)}\n")
@@ -368,6 +371,10 @@ class FMANew extends FPUSubModule with HasFmaConst {
       common_result
     )
   )
+
+  FPUDebug(){
+    printf(p"${Hexadecimal(result)} spec:${specialCaseHappen} ov:${overflow}\n")
+  }
 
   io.out.bits.result := result
   io.out.bits.fflags.invalid := invalid

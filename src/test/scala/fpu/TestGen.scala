@@ -7,7 +7,7 @@ import chisel3._
 import chiseltest.internal.{TreadleBackendAnnotation, VerilatorBackendAnnotation}
 import fpu.RoudingMode.{RDN, RMM, RNE, RTZ, RUP}
 import fpu.divsqrt.DivSqrt
-import fpu.fma.{FMA, FMANew}
+import fpu.fma.{FMA, FMANew, FMAPipeline}
 import fpu.FPUOpType._
 
 object TestGen
@@ -103,7 +103,7 @@ object TestGen
   def F32ToF64 = new F32toF64
   def F64ToF32 = new F64toF32
   def FCMP = new FCMP
-  def FMA = new FMANew
+  def FMA = new FMAPipeline
 
   def D = true
   def S = false
