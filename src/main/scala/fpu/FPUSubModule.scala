@@ -5,9 +5,9 @@ import chisel3.util._
 
 
 class FPUSubModuleInput extends Bundle{
-  val op = UInt(3.W)
+  val op = UInt(6.W)
   val isDouble = Bool()
-  val a, b, c = UInt(64.W)
+  val a, b, c = UInt(65.W)
   val rm = UInt(3.W)
 }
 
